@@ -39,3 +39,5 @@ jobs:
 
       - name: Terraform Plan
         run: terraform plan -var="local_public_ip_cidr=${{ vars.LOCAL_PUBLIC_IP_CIDR }}"
+      - name: Terraform Apply
+        run: terraform apply -auto-approve -var="local_public_ip_cidr=${{ vars.LOCAL_PUBLIC_IP_CIDR }}"
