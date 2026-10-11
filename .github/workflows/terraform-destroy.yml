@@ -1,0 +1,134 @@
+
+name: Terraform Destroy AWS EKS
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type DESTROY to confirm deletion"
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: terraform-java-demo-eks
+  cancel-in-progress: false
+
+jobs:
+  destroy:
+    name: Destroy EKS Infrastructure
+
+    if: ${{ inputs.confirmation == 'DESTROY' }}
+
+    runs-on: ubuntu-latest
+
+    env:
+      AWS_REGION: us-east-1
+      TF_IN_AUTOMATION: "true"
+      TF_VAR_cloudshell_principal_arn: ${{ vars.CLOUDSHELL_PRINCIPAL_ARN || 'arn:aws:iam::820242935759:role/GithubAWSconnection' }}
+
+    steps:
+      # Step 1 - Checkout source code
+      - name: Checkout Source Code
+        uses: actions/checkout@v5
+
+      # Step 2 - Connect to AWS using OIDC
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ secrets.ARN }}
+          aws-region: us-east-1
+
+      # Step 3 - Verify AWS account
+      - name: Verify AWS Connection
+        run: |
+          ACCOUNT=$(aws sts get-caller-identity \
+            --query Account --output text)
+
+          echo "AWS Account: $ACCOUNT"
+
+          if [ "$ACCOUNT" != "820242935759" ]; then
+            echo "Wrong AWS account. Stopping."
+            exit 1
+          fi
+
+      # Step 4 - Install Terraform
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.10.5"
+
+      # Step 5 - Use existing state bucket
+      - name: Locate Terraform State Bucket
+        id: state_bucket
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "$TF_STATE_BUCKET" ]; then
+            echo "TF_STATE_BUCKET is not configured."
+            exit 1
+          fi
+
+          aws s3api head-bucket \
+            --bucket "$TF_STATE_BUCKET"
+
+          echo "bucket=$TF_STATE_BUCKET" >> "$GITHUB_OUTPUT"
+
+      # Step 6 - Initialize same remote state
+      - name: Terraform Init
+        env:
+          TF_STATE_BUCKET: ${{ steps.state_bucket.outputs.bucket }}
+        run: |
+          terraform init \
+            -input=false \
+            -backend-config="bucket=$TF_STATE_BUCKET"
+
+      # Step 7 - Verify state
+      - name: Verify Terraform State
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Terraform workspace:"
+          terraform workspace show
+
+          echo "Resources managed by Terraform:"
+          terraform state list
+
+          if ! terraform state list | grep -q '^module.eks'; then
+            echo "EKS resources not found in state."
+            echo "Stopping to avoid using the wrong state."
+            exit 1
+          fi
+
+      # Step 8 - Generate destroy plan
+      - name: Terraform Destroy Plan
+        run: |
+          terraform plan \
+            -destroy \
+            -input=false \
+            -out=destroy.tfplan
+
+          terraform show -no-color destroy.tfplan
+
+      # Step 9 - Destroy infrastructure
+      - name: Terraform Destroy Apply
+        run: |
+          terraform apply \
+            -input=false \
+            destroy.tfplan
+
+      # Step 10 - Check remaining resources
+      - name: Verify Destruction
+        run: |
+          echo "Remaining Terraform resources:"
+          terraform state list
+
+          echo "EKS clusters still in this region:"
+          aws eks list-clusters --region us-east-1
