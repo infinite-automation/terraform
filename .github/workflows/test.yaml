@@ -1,15 +1,26 @@
-name: Test AWS OIDC Connection
+name: Terraform AWS EKS
 
 on:
   push:
+
   workflow_dispatch:
+    inputs:
+      action:
+        description: "Choose Terraform action"
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+        default: plan
 
 permissions:
   id-token: write
   contents: read
 
 jobs:
-  test-aws-connection:
+  terraform:
     runs-on: ubuntu-latest
 
     steps:
@@ -38,9 +49,13 @@ jobs:
         run: terraform validate
 
       - name: Terraform Plan
+        if: github.event_name == 'push' || inputs.action == 'plan' || inputs.action == 'apply'
         run: terraform plan -var="local_public_ip_cidr=${{ vars.LOCAL_PUBLIC_IP_CIDR }}"
+
       - name: Terraform Apply
+        if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply'
         run: terraform apply -auto-approve -var="local_public_ip_cidr=${{ vars.LOCAL_PUBLIC_IP_CIDR }}"
+
       - name: Terraform Destroy
         if: github.event_name == 'workflow_dispatch' && inputs.action == 'destroy'
         run: terraform destroy -auto-approve -var="local_public_ip_cidr=${{ vars.LOCAL_PUBLIC_IP_CIDR }}"
