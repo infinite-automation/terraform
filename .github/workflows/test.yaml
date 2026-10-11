@@ -38,5 +38,4 @@ jobs:
         run: terraform validate
 
       - name: Terraform Plan
-        run: terraform plan \
-          -var="local_public_ip_cidr=${{ vars.LOCAL_PUBLIC_IP_CIDR }}"
+        run: terraform plan -var="local_public_ip_cidr=${{ vars.LOCAL_PUBLIC_IP_CIDR }}"
