@@ -6,7 +6,7 @@ AWS charges apply for the EKS cluster, worker instance, storage, public IPv4 add
 
 ## 1. Prepare your computer
 
-Install Terraform 1.5.7+, AWS CLI v2, and kubectl compatible with Kubernetes 1.35 (within one minor version). Configure AWS credentials using your normal AWS profile or SSO login. The identity needs permissions to create EKS, EC2/VPC, IAM roles, KMS, and CloudWatch resources.
+Install Terraform 1.10+, AWS CLI v2, and kubectl compatible with Kubernetes 1.35 (within one minor version). Configure AWS credentials using your normal AWS profile or SSO login. The identity needs permissions to create EKS, EC2/VPC, IAM roles, KMS, and CloudWatch resources.
 
 ```text
 aws sts get-caller-identity
@@ -43,21 +43,39 @@ kubernetes_version   = "1.35"
 
 Use your public internet address, not a local address such as `192.168.x.x`. If your VPN/network changes that address later, update this value and apply again.
 
-## 3. Create the cluster
+## 3. Configure S3 state storage
+
+Create an S3 bucket in **us-east-1** before initializing this project. Enable bucket versioning, default encryption, and Block Public Access. Keep the bucket separate from the EKS resources so destroying the cluster preserves its state storage.
+
+In GitHub repository settings, add the Actions **variable** `TF_STATE_BUCKET` with the bucket name. Keep the IAM role ARN in the existing Actions **secret** `ARN`.
+
+The GitHub OIDC role and your local AWS identity need `s3:ListBucket` on the bucket, `s3:GetObject` and `s3:PutObject` on `java-demo-eks/terraform.tfstate`, and `s3:GetObject`, `s3:PutObject`, and `s3:DeleteObject` on `java-demo-eks/terraform.tfstate.tflock`. The backend uses encryption and S3 state locking.
+
+If this directory already contains local state, back it up and migrate it **before running the GitHub workflow**:
+
+```text
+terraform init -migrate-state -backend-config="bucket=YOUR_EXISTING_BUCKET_NAME"
+```
+
+Review and confirm the state-copy prompt. For a fresh project with no state, omit `-migrate-state`. Use the same bucket and state key locally and in GitHub Actions.
+
+Reference: [HashiCorp S3 backend documentation](https://developer.hashicorp.com/terraform/language/backend/s3).
+
+## 4. Create the cluster
 
 Run from this `terraform` directory on any platform:
 
 ```text
-terraform init
+terraform init -backend-config="bucket=YOUR_EXISTING_BUCKET_NAME"
 terraform fmt -check
 terraform validate
 terraform plan
 terraform apply
 ```
 
-Review the plan and enter `yes` when you are ready to create the resources. Creation typically takes several minutes. Terraform stores state locally here: keep it safe, do not commit it, and use the same directory/state for later updates and deletion. Commit `.terraform.lock.hcl` to keep provider versions consistent.
+Review the plan and enter `yes` when you are ready to create the resources. Creation typically takes several minutes. Terraform stores state in the configured S3 bucket; use the same backend for later updates and deletion. Commit `.terraform.lock.hcl` to keep provider versions consistent.
 
-## 4. Connect from your computer
+## 5. Connect from your computer
 
 After apply, display the connection command:
 
