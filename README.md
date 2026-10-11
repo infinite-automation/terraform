@@ -1,6 +1,6 @@
 # Local Terraform setup for AWS EKS
 
-Creates `java-demo-eks` in **us-east-1**, with a VPC, two public subnets, required IAM roles, and one `t3.medium` managed worker node. This is a small learning setup with no NAT gateway. Nodes receive public IPs for outbound downloads; security groups control inbound access. The Kubernetes API allows your configured public IP and internal cluster traffic.
+Creates `java-demo-eks` in **us-east-1**, with a VPC, two public subnets, required IAM roles, and one `t3.medium` managed worker node. This is a small learning setup with no NAT gateway. Nodes receive public IPs for outbound downloads; security groups control inbound access. The Kubernetes API accepts public connections from any IPv4 address and supports private access within the VPC. IAM authentication and Kubernetes authorization are still required.
 
 AWS charges apply for the EKS cluster, worker instance, storage, public IPv4 addresses, and logs. Destroy the demo when finished. This creates infrastructure only; it does not deploy the Java application or create a website URL.
 
@@ -15,33 +15,17 @@ cd terraform
 
 Use that same AWS profile/role when creating the cluster and running kubectl. The cluster creator receives Kubernetes administrator access. Do not put AWS access keys in Terraform files.
 
-## 2. Set your public IP
+## 2. Optional cluster settings
 
-Copy the example configuration:
+The default cluster name is `java-demo-eks` and Kubernetes version is `1.35`. To customize them, copy `terraform.tfvars.example` to `terraform.tfvars` and edit the values. No public IP variable is required locally or in GitHub Actions.
 
-Windows PowerShell:
+The public endpoint allows `0.0.0.0/0`, so standard CloudShell can connect. Your CloudShell IAM identity still needs an EKS access entry with appropriate Kubernetes permissions; the GitHub Actions creator role receives administrator access automatically.
 
-```powershell
-Copy-Item terraform.tfvars.example terraform.tfvars
-(Invoke-RestMethod https://checkip.amazonaws.com).Trim()
-```
+Terraform grants `arn:aws:iam::820242935759:role/GithubAWSconnection` cluster administrator access by default, using an access entry and `AmazonEKSClusterAdminPolicy` at cluster scope. No additional GitHub variable is required. To use a different identity, set the GitHub Actions repository variable `CLOUDSHELL_PRINCIPAL_ARN`. For local Terraform runs, override `cloudshell_principal_arn` in `terraform.tfvars` or export `TF_VAR_cloudshell_principal_arn`. Keep local and workflow values consistent. An explicitly empty Terraform input disables/removes this entry; the workflow uses the default role when its repository variable is unset or empty.
 
-Linux/macOS:
+The ARN must be `arn:aws:iam::ACCOUNT_ID:user/NAME` or `arn:aws:iam::ACCOUNT_ID:role/NAME`, not `arn:aws:sts::...:assumed-role/...` or a root ARN. Sign into the console with that IAM user or role before opening CloudShell. This configuration does not create an IAM identity or attach AWS service permissions; the identity also needs CloudShell permissions and `eks:DescribeCluster` on this cluster. The Terraform execution role needs permission to manage EKS access entries and access-policy associations.
 
-```sh
-cp terraform.tfvars.example terraform.tfvars
-curl -4 https://checkip.amazonaws.com
-```
-
-Edit `terraform.tfvars`, replacing the example address with the address just printed, followed by `/32`:
-
-```hcl
-local_public_ip_cidr = "YOUR_PUBLIC_IPV4/32"
-cluster_name         = "java-demo-eks"
-kubernetes_version   = "1.35"
-```
-
-Use your public internet address, not a local address such as `192.168.x.x`. If your VPN/network changes that address later, update this value and apply again.
+Reference: [AWS EKS access entries](https://docs.aws.amazon.com/eks/latest/userguide/creating-access-entries.html).
 
 ## 3. Configure S3 state storage
 
@@ -109,7 +93,7 @@ Run `terraform output` to see all outputs:
 | `cluster_certificate_authority_data` | Cluster CA certificate, automatically used by AWS CLI |
 | `vpc_id`, `subnet_ids`, `node_group_name` | Infrastructure identifiers |
 
-For a timeout, check your public IP and network connectivity. For an authentication error, run `aws sts get-caller-identity` and confirm you are using the creator identity and an active SSO session if applicable.
+For a timeout, check endpoint configuration and network connectivity. For an authentication error, run `aws sts get-caller-identity` and confirm you are using the creator identity and an active SSO session if applicable.
 
 ## Delete the demo
 

@@ -34,13 +34,28 @@ module "eks" {
   vpc_id             = module.vpc.vpc_id
   subnet_ids         = module.vpc.public_subnets
 
-  # Local kubectl uses the public endpoint; nodes use the private endpoint.
+  # Allow public endpoint connections from any IPv4 address; IAM access is still required.
   endpoint_public_access       = true
-  endpoint_public_access_cidrs = [var.local_public_ip_cidr]
+  endpoint_public_access_cidrs = ["0.0.0.0/0"]
   endpoint_private_access      = true
 
   # Use the same AWS IAM identity for Terraform and local kubectl.
   enable_cluster_creator_admin_permissions = true
+
+  access_entries = var.cloudshell_principal_arn == "" ? {} : {
+    cloudshell = {
+      principal_arn = var.cloudshell_principal_arn
+      type          = "STANDARD"
+      policy_associations = {
+        admin = {
+          policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+          access_scope = {
+            type = "cluster"
+          }
+        }
+      }
+    }
+  }
 
   addons = {
     vpc-cni = {

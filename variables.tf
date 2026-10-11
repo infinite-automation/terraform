@@ -10,12 +10,13 @@ variable "kubernetes_version" {
   default     = "1.35"
 }
 
-variable "local_public_ip_cidr" {
-  description = "Your computer/network's public IPv4 address followed by /32, allowed to reach the EKS API."
+variable "cloudshell_principal_arn" {
+  description = "Existing IAM user or role used in CloudShell to grant Kubernetes cluster administrator access. Empty disables the entry."
   type        = string
+  default     = "arn:aws:iam::820242935759:role/GithubAWSconnection"
 
   validation {
-    condition     = can(cidrnetmask(var.local_public_ip_cidr)) && can(regex("/32$", var.local_public_ip_cidr))
-    error_message = "Enter a valid public IPv4 CIDR for one address, such as 203.0.113.10/32."
+    condition     = var.cloudshell_principal_arn == "" || can(regex("^arn:aws:iam::[0-9]{12}:(user|role)/.+$", var.cloudshell_principal_arn))
+    error_message = "Provide an IAM user or role ARN, not a root ARN or an STS assumed-role session ARN."
   }
 }

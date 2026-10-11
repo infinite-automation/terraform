@@ -16,6 +16,8 @@ concurrency:
 jobs:
   terraform:
     runs-on: ubuntu-latest
+    env:
+      TF_VAR_cloudshell_principal_arn: ${{ vars.CLOUDSHELL_PRINCIPAL_ARN || 'arn:aws:iam::820242935759:role/GithubAWSconnection' }}
 
     steps:
       - name: Checkout Source Code
@@ -53,7 +55,7 @@ jobs:
         run: terraform validate
 
       - name: Terraform Plan
-        run: terraform plan -var="local_public_ip_cidr=${{ vars.LOCAL_PUBLIC_IP_CIDR }}"
+        run: terraform plan
 
       - name: Terraform Apply
-        run: terraform apply -auto-approve -var="local_public_ip_cidr=${{ vars.LOCAL_PUBLIC_IP_CIDR }}"
+        run: terraform apply -auto-approve
