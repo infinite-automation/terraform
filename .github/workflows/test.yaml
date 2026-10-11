@@ -1,9 +1,8 @@
+
 name: Terraform AWS EKS
 
 on:
   push:
-
- 
 
 permissions:
   id-token: write
@@ -16,58 +15,131 @@ concurrency:
 jobs:
   terraform:
     runs-on: ubuntu-latest
+
     env:
+      AWS_REGION: us-east-1
       TF_VAR_cloudshell_principal_arn: ${{ vars.CLOUDSHELL_PRINCIPAL_ARN || 'arn:aws:iam::820242935759:role/GithubAWSconnection' }}
 
     steps:
+      # Step 1: Checkout source code
       - name: Checkout Source Code
         uses: actions/checkout@v5
 
+      # Step 2: Authenticate to AWS using OIDC
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6.3.0
         with:
           role-to-assume: ${{ secrets.ARN }}
           aws-region: us-east-1
 
+      # Step 3: Verify AWS authentication
       - name: Verify AWS Connection
-        run: aws sts get-caller-identity
+        run: |
+          aws sts get-caller-identity
+          aws eks list-clusters --region "$AWS_REGION"
 
+      # Step 4: Setup Terraform
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.10.5"
 
+      # Step 5: Create or reuse S3 state bucket
       - name: Create or Reuse State Bucket
         id: state_bucket
         env:
           TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
         run: bash .github/scripts/ensure-state-bucket.sh
 
+      # Step 6: Initialize Terraform
       - name: Terraform Init
         env:
           TF_STATE_BUCKET: ${{ steps.state_bucket.outputs.bucket }}
-        run: terraform init -input=false -backend-config="bucket=$TF_STATE_BUCKET"
+        run: |
+          terraform init \
+            -input=false \
+            -backend-config="bucket=$TF_STATE_BUCKET"
 
+      # Step 7: Format check
       - name: Terraform Format Check
         run: terraform fmt -check
 
+      # Step 8: Validate Terraform
       - name: Terraform Validate
         run: terraform validate
 
+      # Step 9: Import access entry only if it exists
       - name: Import Existing EKS Access Entry
         shell: bash
         run: |
+          set -euo pipefail
+
           RESOURCE='module.eks.aws_eks_access_entry.this["cloudshell"]'
-          PRINCIPAL='arn:aws:iam::820242935759:role/GithubAWSconnection'
+          PRINCIPAL="$TF_VAR_cloudshell_principal_arn"
+          CLUSTER="java-demo-eks"
+
+          echo "Checking Terraform state..."
 
           if terraform state show "$RESOURCE" >/dev/null 2>&1; then
-            echo "Access entry already managed by Terraform"
-          else
-            terraform import "$RESOURCE" "java-demo-eks:$PRINCIPAL"
+            echo "Access entry already managed by Terraform."
+            exit 0
           fi
 
-      - name: Terraform Plan
-        run: terraform plan
+          echo "Checking EKS cluster..."
 
+          if ! aws eks describe-cluster \
+            --name "$CLUSTER" \
+            --region "$AWS_REGION" \
+            > /dev/null 2> cluster_error.txt; then
+
+            if grep -q 'ResourceNotFoundException' cluster_error.txt; then
+              echo "EKS cluster does not exist yet."
+              echo "Skipping import. Terraform will create it."
+              exit 0
+            fi
+
+            cat cluster_error.txt
+            exit 1
+          fi
+
+          echo "Checking EKS access entry..."
+
+          if ! aws eks describe-access-entry \
+            --cluster-name "$CLUSTER" \
+            --principal-arn "$PRINCIPAL" \
+            --region "$AWS_REGION" \
+            > /dev/null 2> access_error.txt; then
+
+            if grep -q 'ResourceNotFoundException' access_error.txt; then
+              echo "Access entry does not exist."
+              echo "Skipping import. Terraform will create it."
+              exit 0
+            fi
+
+            cat access_error.txt
+            exit 1
+          fi
+
+          echo "Importing existing access entry..."
+
+          terraform import \
+            -input=false \
+            "$RESOURCE" \
+            "$CLUSTER:$PRINCIPAL"
+
+      # Step 10: Terraform Plan
+      - name: Terraform Plan
+        run: terraform plan -input=false -out=tfplan
+
+      # Step 11: Terraform Apply
       - name: Terraform Apply
-        run: terraform apply -auto-approve
+        run: terraform apply -input=false tfplan
+
+      # Step 12: Verify EKS Cluster
+      - name: Verify EKS Cluster
+        run: |
+          aws eks describe-cluster \
+            --name java-demo-eks \
+            --region "$AWS_REGION" \
+            --query 'cluster.status' \
+            --output text
