@@ -3,17 +3,7 @@ name: Terraform AWS EKS
 on:
   push:
 
-  workflow_dispatch:
-    inputs:
-      action:
-        description: "Choose Terraform action"
-        required: true
-        type: choice
-        options:
-          - plan
-          - apply
-          - destroy
-        default: plan
+ 
 
 permissions:
   id-token: write
