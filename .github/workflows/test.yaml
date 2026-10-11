@@ -30,7 +30,7 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6.3.0
         with:
-          role-to-assume: arn:aws:iam::820242935759:role/GitHubActionsOIDCRoletets2
+          role-to-assume: ${{ secrets.ARN }}
           aws-region: us-east-1
 
       - name: Verify AWS Connection
@@ -56,6 +56,4 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply'
         run: terraform apply -auto-approve -var="local_public_ip_cidr=${{ vars.LOCAL_PUBLIC_IP_CIDR }}"
 
-      - name: Terraform Destroy
-        if: github.event_name == 'workflow_dispatch' && inputs.action == 'destroy'
-        run: terraform destroy -auto-approve -var="local_public_ip_cidr=${{ vars.LOCAL_PUBLIC_IP_CIDR }}"
+     
