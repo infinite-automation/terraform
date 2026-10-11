@@ -49,11 +49,7 @@ jobs:
         run: terraform validate
 
       - name: Terraform Plan
-        if: github.event_name == 'push' || inputs.action == 'plan' || inputs.action == 'apply'
         run: terraform plan -var="local_public_ip_cidr=${{ vars.LOCAL_PUBLIC_IP_CIDR }}"
 
       - name: Terraform Apply
-        if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply'
         run: terraform apply -auto-approve -var="local_public_ip_cidr=${{ vars.LOCAL_PUBLIC_IP_CIDR }}"
-
-     
