@@ -127,6 +127,54 @@ jobs:
             "$RESOURCE" \
             "$CLUSTER:$PRINCIPAL"
 
+      - name: Import Existing Cluster Creator Access Entry
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          RESOURCE='module.eks.aws_eks_access_entry.this["cluster_creator"]'
+          CLUSTER="java-demo-eks"
+          REGION="us-east-1"
+
+          if terraform state show "$RESOURCE" >/dev/null 2>&1; then
+            echo "Cluster creator already in Terraform state"
+            exit 0
+          fi
+
+          if ! aws eks describe-cluster \
+            --name "$CLUSTER" \
+            --region "$REGION" >/dev/null 2>&1; then
+            echo "Cluster not found. Skipping import."
+            exit 0
+          fi
+
+          PRINCIPAL=$(aws sts get-caller-identity \
+            --query Arn --output text)
+
+          # Resolve the IAM role ARN, not the STS ARN
+          ROLE_NAME=$(echo "$PRINCIPAL" | cut -d/ -f2)
+
+          PRINCIPAL_ARN=$(aws iam get-role \
+            --role-name "$ROLE_NAME" \
+            --query 'Role.Arn' \
+            --output text)
+
+          echo "Checking access entry for $PRINCIPAL_ARN"
+
+          if aws eks describe-access-entry \
+            --cluster-name "$CLUSTER" \
+            --principal-arn "$PRINCIPAL_ARN" \
+            --region "$REGION" >/dev/null 2>&1; then
+
+            echo "Importing cluster creator entry"
+
+            terraform import -input=false \
+              "$RESOURCE" \
+              "$CLUSTER:$PRINCIPAL_ARN"
+          else
+            echo "Entry not found. Terraform will create it."
+          fi
+
       # Step 10: Terraform Plan
       - name: Terraform Plan
         run: terraform plan -input=false -out=tfplan
