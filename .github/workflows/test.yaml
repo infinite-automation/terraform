@@ -54,6 +54,18 @@ jobs:
       - name: Terraform Validate
         run: terraform validate
 
+      - name: Import Existing EKS Access Entry
+        shell: bash
+        run: |
+          RESOURCE='module.eks.aws_eks_access_entry.this["cloudshell"]'
+          PRINCIPAL='arn:aws:iam::820242935759:role/GithubAWSconnection'
+
+          if terraform state show "$RESOURCE" >/dev/null 2>&1; then
+            echo "Access entry already managed by Terraform"
+          else
+            terraform import "$RESOURCE" "java-demo-eks:$PRINCIPAL"
+          fi
+
       - name: Terraform Plan
         run: terraform plan
 
