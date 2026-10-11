@@ -45,13 +45,15 @@ Use your public internet address, not a local address such as `192.168.x.x`. If 
 
 ## 3. Configure S3 state storage
 
-Create an S3 bucket in **us-east-1** before initializing this project. Enable bucket versioning, default encryption, and Block Public Access. Keep the bucket separate from the EKS resources so destroying the cluster preserves its state storage.
+The workflow automatically creates an S3 bucket in **us-east-1** named `tfstate-ACCOUNT_ID-FIRST_COMMIT_SHA`, with versioning, encryption, and Block Public Access. It saves the name in SSM Parameter Store at `/github/OWNER/REPO/java-demo-eks/state-bucket`. Later commits reuse this bucket so Terraform keeps tracking the same resources. Keep this parameter and bucket when destroying the cluster.
 
-In GitHub repository settings, add the Actions **variable** `TF_STATE_BUCKET` with the bucket name. Keep the IAM role ARN in the existing Actions **secret** `ARN`.
+No `TF_STATE_BUCKET` variable is required. You may optionally set it to explicitly select a bucket. Keep the IAM role ARN in the existing Actions **secret** `ARN`. The workflow logs the selected bucket name; use that name for local initialization.
+
+The GitHub OIDC role also needs `ssm:GetParameter` and `ssm:PutParameter` on the parameter above, plus `s3:CreateBucket`, `s3:PutBucketVersioning`, `s3:PutEncryptionConfiguration`, and `s3:PutBucketPublicAccessBlock` on the state bucket. Grant bucket permissions for `tfstate-ACCOUNT_ID-*` when using automatic naming. AWS `HeadBucket` requires `s3:ListBucket`; permission errors stop the script rather than creating a replacement state bucket.
 
 The GitHub OIDC role and your local AWS identity need `s3:ListBucket` on the bucket, `s3:GetObject` and `s3:PutObject` on `java-demo-eks/terraform.tfstate`, and `s3:GetObject`, `s3:PutObject`, and `s3:DeleteObject` on `java-demo-eks/terraform.tfstate.tflock`. The backend uses encryption and S3 state locking.
 
-If this directory already contains local state, back it up and migrate it **before running the GitHub workflow**:
+If this directory already contains local state for existing resources, back it up, create the backend bucket first, set `TF_STATE_BUCKET` to that name, and migrate it **before running the GitHub workflow**:
 
 ```text
 terraform init -migrate-state -backend-config="bucket=YOUR_EXISTING_BUCKET_NAME"
